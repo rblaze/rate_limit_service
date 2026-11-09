@@ -1,0 +1,46 @@
+# Sample RateLimitService (RLS) configuration for Envoy's ModelRouter AI filter.
+listen: "127.0.0.1:18081"
+domain: "model_router"
+
+redis:
+  host: "127.0.0.1"
+  port: 6379
+  timeout: "1s"
+
+models:
+  # Primary candidate model: tight request and token budgets so fallback triggers quickly in demos.
+  - name: antroclaude-haiku
+    provider: anthropic
+    model: claude-haiku-5-5
+    quotas:
+      - quota_type: REQUESTS
+        time_unit: MINUTE
+        limit: 3
+      - quota_type: TOKENS
+        time_unit: MINUTE
+        limit: 500
+
+  # Fallback candidate model: higher rolling-window budgets across multiple windows.
+  - name: antroclaude-sonnet
+    provider: anthropic
+    model: claude-sonnet-5-5
+    quotas:
+      - quota_type: REQUESTS
+        time_unit: MINUTE
+        limit: 20
+      - quota_type: REQUESTS
+        time_unit: HOUR
+        limit: 200
+        unit_multiplier: 6
+      - quota_type: TOKENS
+        time_unit: DAY
+        limit: 100000
+
+  # Example disabled model (limit: 0 immediately returns OVER_LIMIT without querying Redis).
+  - name: disabled-opus
+    provider: anthropic
+    model: claude-opus-4-5
+    quotas:
+      - quota_type: REQUESTS
+        time_unit: HOUR
+        limit: 0

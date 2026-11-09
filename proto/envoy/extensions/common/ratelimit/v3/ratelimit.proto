@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package envoy.extensions.common.ratelimit.v3;
+
+import "envoy/type/v3/ratelimit_unit.proto";
+import "envoy/type/v3/token_bucket.proto";
+import "google/protobuf/wrappers.proto";
+
+enum XRateLimitHeadersRFCVersion {
+  OFF = 0;
+  DRAFT_VERSION_03 = 1;
+}
+
+enum VhRateLimitsOptions {
+  OVERRIDE = 0;
+  INCLUDE = 1;
+  IGNORE = 2;
+}
+
+// A RateLimitDescriptor is a list of hierarchical entries that are used by the service to
+// determine the final rate limit key and overall allowed limit.
+message RateLimitDescriptor {
+  message Entry {
+    // Descriptor key.
+    string key = 1;
+
+    // Descriptor value.
+    string value = 2;
+  }
+
+  // Override rate limit to apply to this descriptor instead of the limit
+  // configured in the rate limit service.
+  message RateLimitOverride {
+    // The number of requests per unit of time.
+    uint32 requests_per_unit = 1;
+
+    // The unit of time.
+    type.v3.RateLimitUnit unit = 2;
+
+    // The number of units in the rate limit period. Defaults to 1 if not specified.
+    google.protobuf.UInt32Value unit_multiplier = 3;
+  }
+
+  // Descriptor entries.
+  repeated Entry entries = 1;
+
+  // Optional rate limit override to supply to the ratelimit service.
+  RateLimitOverride limit = 2;
+
+  // Optional hits_addend for the rate limit descriptor. If set the value will override the
+  // request level hits_addend.
+  google.protobuf.UInt64Value hits_addend = 3;
+
+  // If true, the hits_addend value will be treated as negative, effectively adding to
+  // the rate limit budget instead of consuming from it.
+  bool is_negative_hits = 4;
+}
+
+message LocalRateLimitDescriptor {
+  repeated v3.RateLimitDescriptor.Entry entries = 1;
+  type.v3.TokenBucket token_bucket = 2;
+  bool shadow_mode = 3;
+}
+
+message LocalClusterRateLimit {
+}

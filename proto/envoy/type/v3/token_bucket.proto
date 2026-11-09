@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package envoy.type.v3;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/wrappers.proto";
+
+// Configures a token bucket, typically used for rate limiting.
+message TokenBucket {
+  uint32 max_tokens = 1;
+  google.protobuf.UInt32Value tokens_per_fill = 2;
+  google.protobuf.Duration fill_interval = 3;
+}

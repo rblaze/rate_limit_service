@@ -1,0 +1,22 @@
+[package]
+name = "rate-limit-service"
+version = "0.1.0"
+edition = "2024"
+description = "Envoy RateLimitService (CheckRateLimit & ConsumeRateLimit) PoC backed by Redis"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+prost = "0.13"
+prost-types = "0.13"
+redis = { version = "0.27", default-features = false, features = ["tokio-comp", "connection-manager"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "io-util", "sync"] }
+tonic = "0.12"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[build-dependencies]
+tonic-build = "0.12"

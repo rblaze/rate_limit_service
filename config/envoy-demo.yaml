@@ -1,0 +1,143 @@
+# Companion Envoy bootstrap configuration for the `rblaze/envoy@rls` branch.
+# Pairs Envoy's ModelRouter AI filter (configured with RlsQuotaConfig) with the
+# Rust rate-limit-service listening on 127.0.0.1:18081.
+
+static_resources:
+  listeners:
+    - name: llm_gateway_listener
+      address:
+        socket_address:
+          address: 127.0.0.1
+          port_value: 10000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ai_gateway
+                codec_type: AUTO
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: ai_vhost
+                      domains: ["*"]
+                      include_request_attempt_count: true
+                      routes:
+                        - match:
+                            prefix: "/v1/chat/completions"
+                          route:
+                            cluster: anthropic_cluster
+                          typed_per_filter_config:
+                            envoy.filters.http.ai_protocol_manager:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ai_protocol_manager.v3.AiProtocolManagerPerRoute
+                              llm_protocol: OPENAI_CHAT_COMPLETIONS
+                http_filters:
+                  - name: envoy.filters.http.ai_protocol_manager
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ai_protocol_manager.v3.AiProtocolManager
+                      request_handling: {}
+                      filters:
+                        - name: envoy.http.ai_filters.schema_validation
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.http.ai_filters.schema_validation.v3.SchemaValidation
+                        - name: envoy.http.ai_filters.request_info
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.http.ai_filters.request_info.v3.RequestInfo
+                        - name: envoy.http.ai_filters.model_router
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.http.ai_filters.model_router.v3.ModelRouter
+                            providers:
+                              - name: anthropic
+                                llm_protocol: ANTHROPIC_MESSAGES
+                                host_and_port: "127.0.0.1:18080"
+                                binding:
+                                  uri_pattern: "/v1/messages"
+                            models:
+                              # Quotas are omitted here so RlsQuota delegates quota lookup to config/rls.yaml.
+                              # (If quotas are also listed on a Model here, Envoy sends them as RateLimitOverrides,
+                              # which rate-limit-service also honors.)
+                              - name: antroclaude-haiku
+                                provider: anthropic
+                                model: "claude-haiku-5-5"
+                                api_key:
+                                  inline_string: "Bearer DEMO_ANTHROPIC_KEY"
+                              - name: antroclaude-sonnet
+                                provider: anthropic
+                                model: "claude-sonnet-5-5"
+                                api_key:
+                                  inline_string: "Bearer DEMO_ANTHROPIC_KEY"
+                            routes:
+                              - requested_model: "claude-auto"
+                                targets:
+                                  - model: antroclaude-haiku
+                                  - model: antroclaude-sonnet
+                            quota_config:
+                              name: rls
+                              typed_config:
+                                "@type": type.googleapis.com/envoy.extensions.http.ai_filters.model_router.v3.RlsQuotaConfig
+                                domain: model_router
+                                timeout: 1s
+                                grpc_service:
+                                  envoy_grpc:
+                                    cluster_name: rls_cluster
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                      upstream_http_filters:
+                        - name: envoy.filters.http.ai_protocol_manager
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.filters.http.ai_protocol_manager.v3.AiProtocolManager
+                            request_handling: {}
+                            response_handling:
+                              token_usage: {}
+                            filters:
+                              - name: envoy.http.ai_filters.route_selector
+                                typed_config:
+                                  "@type": type.googleapis.com/envoy.extensions.http.ai_filters.route_selector.v3.RouteSelector
+                              - name: envoy.http.ai_filters.transcoder
+                                typed_config:
+                                  "@type": type.googleapis.com/envoy.extensions.http.ai_filters.transcoder.v3.Transcoder
+                                  request_handling: TO_IR
+                                  response_handling: FROM_IR
+                              - name: envoy.http.ai_filters.transcoder
+                                typed_config:
+                                  "@type": type.googleapis.com/envoy.extensions.http.ai_filters.transcoder.v3.Transcoder
+                                  request_handling: FROM_IR
+                                  response_handling: TO_IR
+                        - name: envoy.filters.http.upstream_codec
+                          typed_config:
+                            "@type": type.googleapis.com/envoy.extensions.http.upstream_codec.v3.UpstreamCodec
+
+  clusters:
+    # Rust RateLimitService gRPC cluster (HTTP/2)
+    - name: rls_cluster
+      type: STATIC
+      connect_timeout: 1s
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: rls_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 18081
+
+    # Upstream LLM endpoint (e.g. local mock server or real provider endpoint)
+    - name: anthropic_cluster
+      type: STATIC
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: anthropic_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 18080

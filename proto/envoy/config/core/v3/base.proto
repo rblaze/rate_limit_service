@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package envoy.config.core.v3;
+
+// Header name/value pair (wire-identical subset of envoy/config/core/v3/base.proto).
+message HeaderValue {
+  // Header name.
+  string key = 1;
+
+  // Header value encoded as UTF-8 string.
+  string value = 2;
+
+  // Header value encoded as raw bytes.
+  bytes raw_value = 3;
+}
